@@ -48,7 +48,7 @@ class GridWorld:
             print("|".join(row))
         print()
 
-class ActiveInferenceAgent:
+class AstarAgent:
     def __init__(self, model):
         self.model = model
         self.current_position = model.initial_state
@@ -95,7 +95,7 @@ class ActiveInferenceAgent:
 
 def simulate():
     environment = GridWorld(size=5, target=(4, 4), initial_state=(0, 0), num_obstacles=3)
-    agent = ActiveInferenceAgent(environment)
+    agent = AstarAgent(environment)
     agent.move_to_target()
 
 if __name__ == "__main__":
