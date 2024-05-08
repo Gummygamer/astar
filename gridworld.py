@@ -1,63 +1,72 @@
 import numpy as np
+import os
 import time
+from random import sample
 from queue import PriorityQueue
 
 class GridWorld:
-    def __init__(self, size, target, initial_state, obstacles):
+    def __init__(self, size, target, initial_state, num_obstacles):
         self.size = size
         self.target = target
         self.initial_state = initial_state
-        self.obstacles = set(obstacles)
+        self.states = [(i, j) for i in range(size) for j in range(size)]
+        
+        # Remove the initial state and target from possible obstacle locations
+        possible_locations = set(self.states) - {initial_state, target}
+        
+        # Convert set to list for sampling
+        possible_locations_list = list(possible_locations)
+
+        # Randomly select obstacle locations
+        self.obstacles = set(sample(possible_locations_list, num_obstacles))
 
     def is_obstacle(self, position):
         return position in self.obstacles
 
-    def next_state(self, state, action):
-        x, y = state
-        next_positions = {
-            'up': (max(x - 1, 0), y),
-            'down': (min(x + 1, self.size - 1), y),
-            'left': (x, max(y - 1, 0)),
-            'right': (x, min(y + 1, self.size - 1))
-        }
-        next_state = next_positions[action]
-        if self.is_obstacle(next_state):
-            return state
-        return next_state
-
-    def get_neighbors(self, node):
-        directions = ['up', 'down', 'left', 'right']
+    def get_neighbors(self, current):
+        directions = [('up', (0, -1)), ('right', (1, 0)), ('down', (0, 1)), ('left', (-1, 0))]
         neighbors = []
-        for direction in directions:
-            next_pos = self.next_state(node, direction)
-            if next_pos != node and not self.is_obstacle(next_pos):
-                neighbors.append((next_pos, 1))  # (position, cost)
+        for direction, (dx, dy) in directions:
+            nx, ny = current[0] + dx, current[1] + dy
+            if 0 <= nx < self.size and 0 <= ny < self.size and (nx, ny) not in self.obstacles:
+                neighbors.append((nx, ny))
         return neighbors
 
     def heuristic(self, a, b):
         return np.linalg.norm(np.array(a) - np.array(b))
-    
-class AstarAgent:
-    def __init__(self, model):
-        self.model = model
-        self.current_state = model.initial_state
 
-    def display_grid(self):
-        grid = np.array([[' ' for _ in range(self.model.size)] for _ in range(self.model.size)])
-        for obs in self.model.obstacles:
-            grid[obs[0]][obs[1]] = 'X'
-        grid[self.current_state[0]][self.current_state[1]] = 'A'
-        grid[self.model.target[0]][self.model.target[1]] = 'T'
-        print("\n".join(["|".join(row) for row in grid]))
+    def display_grid(self, current_position):
+        os.system('cls' if os.name == 'nt' else 'clear')
+        grid = [[' ' for _ in range(self.size)] for _ in range(self.size)]
+        for (ox, oy) in self.obstacles:
+            grid[ox][oy] = 'X'
+        tx, ty = self.target
+        cx, cy = current_position
+        grid[cx][cy] = 'A'
+        grid[tx][ty] = 'T'
+        for row in grid:
+            print("|".join(row))
         print()
 
-    def find_path(self):
+class ActiveInferenceAgent:
+    def __init__(self, model):
+        self.model = model
+        self.current_position = model.initial_state
+
+    def move_to_target(self):
+        path = self.calculate_path()
+        for position in path:
+            self.current_position = position
+            self.model.display_grid(self.current_position)
+            time.sleep(1)
+
+    def calculate_path(self):
         frontier = PriorityQueue()
-        frontier.put((0, self.current_state))
+        frontier.put((0, self.model.initial_state))
         came_from = {}
         cost_so_far = {}
-        came_from[self.current_state] = None
-        cost_so_far[self.current_state] = 0
+        came_from[self.model.initial_state] = None
+        cost_so_far[self.model.initial_state] = 0
 
         while not frontier.empty():
             current = frontier.get()[1]
@@ -65,36 +74,29 @@ class AstarAgent:
             if current == self.model.target:
                 break
 
-            for next, cost in self.model.get_neighbors(current):
-                new_cost = cost_so_far[current] + cost
+            for next in self.model.get_neighbors(current):
+                new_cost = cost_so_far[current] + 1  # Assume each move costs 1
                 if next not in cost_so_far or new_cost < cost_so_far[next]:
                     cost_so_far[next] = new_cost
                     priority = new_cost + self.model.heuristic(next, self.model.target)
                     frontier.put((priority, next))
                     came_from[next] = current
 
-        return self.reconstruct_path(came_from, self.model.target)
-
-    def reconstruct_path(self, came_from, start):
-        current = start
-        path = []
-        while current != self.current_state:
-            path.append(current)
-            current = came_from[current]
-        path.reverse()
-        return path
-
-    def execute_plan(self):
-        path = self.find_path()
-        for state in path:
-            self.current_state = state
-            self.display_grid()
-            time.sleep(1)
+        # Reconstruct path from came_from
+        if current == self.model.target:  # Ensure a path was found
+            path = []
+            while current != self.model.initial_state:
+                path.append(current)
+                current = came_from[current]
+            path.append(self.model.initial_state)
+            path.reverse()
+            return path
+        return [self.model.initial_state]  # Return a minimal path if no path found
 
 def simulate():
-    environment = GridWorld(size=5, target=(4, 4), initial_state=(0, 0), obstacles=[(1, 1), (4, 2), (3, 3)])
-    agent = AstarAgent(environment)
-    agent.execute_plan()
+    environment = GridWorld(size=5, target=(4, 4), initial_state=(0, 0), num_obstacles=3)
+    agent = ActiveInferenceAgent(environment)
+    agent.move_to_target()
 
-simulate()
-
+if __name__ == "__main__":
+    simulate()
